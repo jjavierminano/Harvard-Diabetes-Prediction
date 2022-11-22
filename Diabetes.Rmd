@@ -1,0 +1,296 @@
+---
+title: "Diabetes Prediction Project"
+author: "José Javier Miñano Ramos"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+---
+
+# Overview
+
+This project is related to the HarvardX Data Science Professional Certificate capstone project.  The present report start with a general idea of the project and by representing its objectif.
+
+Then, an exploratory data analysis is carried out in order to notice important trends in our data and then we will apply some of the  machine learning algorithms that have been taught over the Professional Certificate to predict diagnosis of diabetes in a certain population of women. Finally the report ends with some concluding remarks.
+
+## Introduction
+
+Some state-of-the-art machine learning techniques apply at the medicine field. There are relevant fields such as computer vision where these techniques are meant to change completely our idea of medicine and diagnostics. In this project, we will analyze a dataset which collects information of suspicious diabetes cases, labelled to perform supervised machine learning. 
+
+With diabetes, your body doesn't make enough insulin or can't use it as well as it should. When there isn't enough insulin or cells stop responding to insulin, too much blood sugar stays in your bloodstream. Over time, that can cause serious health problems, such as heart disease, vision loss, and kidney disease. According to the Diabetes International Federation, more than 500 million people suffer diabetes all over the world. As we can see, applying machine learning to this problem could optimize the way we diagnose diabetes and improve the life of millions of people.
+
+Our objetive is to train some classification algorithms with several variables to predict two types of outcome: 1 (diabetic) or 0 (non diabetic).
+
+Previously, in the movielens project we have introduced the terms "precise recommendation system". As this is not a typical regression problem but a classification problem our loss function will be the percentaje of correctly clasificated cases. 
+
+# Dataset:
+First af all we are going to install the packages.
+```{r packages, echo = FALSE}
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(readr)) install.packages("readr", repos = "http://cran.us.r-project.org")
+if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
+if(!require(broom)) install.packages("broom", repos = "http://cran.us.r-project.org")
+if(!require(rpart)) install.packages("rpart", repos = "http://cran.us.r-project.org")
+if(!require(matrixStats)) install.packages("matrixStats", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(gam)) install.packages("gam", repos = "http://cran.us.r-project.org")
+```
+
+```{r packages call, echo = FALSE}
+library(ggplot2)
+library(tidyverse)
+library(caret)
+library(readr)
+library(data.table)
+library(dplyr)
+library(broom) 
+library(rpart)
+library(matrixStats)
+library(gam)
+```
+We will start loading our dataset, (that we previously downloaded to our computer) using the read.csv function.
+
+```{r load dataset, echo = TRUE}
+data = read.csv("diabetes_data.csv")
+```
+
+Now we will start exploring its information:
+
+```{r head dataset1, echo = TRUE}
+head(data)
+```
+As we can see, we have 9 variables: Pregnancies, glucose, blood pressure, skin thickness, insulin, BMI, diabetes pedigree function and age. Finally we have the diagnosis: 1 for diabetic people and 0 for non diabetic people.
+
+```{r Number of non diabetics and non diabetics4, echo = TRUE}
+table(data$Outcome) #500 zeros, 268 ones
+```
+It is convenient to know how the outcome column is distributed, how many 0 and 1 appear and what is its proportion.
+
+```{r dimension dataset2, echo = TRUE}
+dim(data)  
+```
+We also known that our dataset dimension is 768 rows * 9 columns, it is a dataset much smaller than the movielens dataset but it is appropiate to apply machine learning algorithms and avoid computational problems caused by big datasets.
+
+```{r statistical summary3, echo = TRUE}
+summary(data)
+```
+Here we have the summary. We can see the most relevant characteristics of our distribution: for example, mean pregnancies over the dataset are between 3 and 4. However, it is more interesting to observe this variables grouped by diabetic or non diabetic. This is what we are going to do now:
+
+```{r group by diabetics and non diabetics5, echo = TRUE}
+diabetics <- data[data$Outcome == 1,]
+  summary(diabetics)
+non_diabetics <- data[data$Outcome == 0, ]
+  summary(non_diabetics)
+```
+As we can see above, the distributions differ from one case to another. Specifically, if we focus on the mean values:
+
+```{r mean values for diabetics and non diabetics6, echo = TRUE}
+sapply(diabetics, mean) 
+sapply(non_diabetics, mean)
+```
+It is obvious that diabetes affects widely our body, for example, on average glucose levels are 30% higher for diabetic people. Pregnancies are also higher in diabetic women so we can suppose that more pregnancies imply more probabilities of having diabetes.
+We will later explore the importance of these variables using the principal component analysis (PCA).
+
+# Plots
+Now we are going to visualize three important trends using plots:
+
+1.- In the plot below we can observe how the non diabetic density function follows a t-distribution centered at aproximately 100 while the diabetics function is right-winged and provoques a higher mean.
+
+```{r glucose density for diabetics and non diabetics, echo = TRUE}
+plot(density(diabetics$Glucose),ylim = c(0,0.022) ,
+     col = "blue", main = "Glucose density functions")
+lines(density(non_diabetics$Glucose), col = "red")
+legend("topright", c("diabetics glucose density function", 
+                     "non diabetics glucose density function"),
+       col = c("blue", "red"), lty =1, cex= 0.8)
+```
+
+2.- In the second plot we have the insulin density function for both diabetics and non diabetics, we can see how the non diabetics function is left-winged and that reduces the mean. In particular, the non diabetics mean insulin is a 30% lower than for diabetics.
+
+```{r insulin density for diabetics and non diabetics, echo = TRUE}
+plot(density(diabetics$Insulin), ylim = c(0,0.011) , xlim = c(-50, 400),
+     col = "blue", main = "Insulin density functions", xlab = "  ")
+lines(density(non_diabetics$Insulin), col = "red")
+legend("topright", c("diabetics insulin density function",
+                     "non diabetics insulin density function"),
+       col = c("blue", "red"), lty =1, cex= 0.8)
+```
+
+3.- In these plots we can see separately number of pregnancies for diabetics, non diabetics and then we have the most informative plot where we overlap the previous two. We can observe how non diabetic people tend to have less pregnancies.
+
+```{r pregnancies histogram for diabetics and non diabetics,  echo = TRUE}
+p1 <- hist(diabetics$Pregnancies)                     
+p2 <- hist(non_diabetics$Pregnancies)                    
+plot( p1, col=rgb(0,0,1,1/4), xlim=c(0,20), 
+      ylim=c(0,200), main = NULL, xlab = "Pregnancies")  # first histogram
+plot( p2, col=rgb(1,0,0,1/4), xlim=c(0,10), add=T)  # second
+legend("topright", c("diabetics pregnancy frequency", 
+                     "non diabetics pregnancy frequency"),
+       col = c("blue", "red"), lty =1, cex= 0.8)
+```
+
+# Applying machine learning algorithms
+Now we are going to apply several machine learning algorithms. First of all we are going to start by separating the independent variables (X), from the dependent variable (the outcome we are trying to predict, Y):
+
+```{r separate, echo = TRUE}
+X <- data[, 1:8]
+Y <- data$Outcome
+```
+
+Now we are going to see how many diabetes cases are in the outcome column, we want to know it because when we separate it into training and test set we want the proportions to be similar, so the dataset is well-balanced. 35% of the cases are diabetics.
+
+```{r diabetes proportion, echo = TRUE}
+mean(Y == 1)
+```
+
+To improve our predictions we are going to normalize our independent variables: that is, transform them into gaussian variables centered at zero with a standard deviation of 1:
+
+```{r normalize matrix, echo = TRUE}
+X_centered <- sweep(X, 2, colMeans(X), FUN ="-") #subtracting the mean in every column
+X_scaled <- sweep(X_centered, 2, colSds(as.matrix(X)), FUN = "/") #dividing by the standard deviation
+data_scaled <- cbind(X_scaled, Y) 
+```
+
+Now we set the seed to obtain the same random information every time we run the code:
+
+```{r set seed, echo = TRUE}
+set.seed(1, sample.kind = "Rounding")  
+```
+
+Now we are going to separate the data into test and training sets. We will use the training sets to "train" the algorithms with labeled data and then we will examine their real precision using unlabeled data in the test set. We are going to train with the 75% of the data.
+
+```{r create test and train set, echo = TRUE}
+test_index <- createDataPartition(Y, times = 1, p=0.25, list = FALSE) 
+test_set <- data_scaled[test_index,]
+train_set <- data_scaled[-test_index, ]
+```
+
+In the chunk below, we are checking that the proportion of diabetes cases is similar in both training and test sets.
+
+```{r checking proportions, echo = TRUE}
+mean(train_set$Y == 1)
+mean(test_set$Y == 1)
+```
+
+Our first model is the simplest one: guessing randomly 0 or 1. Even though we know that its performance will be low it is useful to have a baseline model that indicates us how much improvement are offered by other algorithms. With our guess model we have a 55% of correct predictions. This 55% is higher than the 50% we could suspect we would have had. This is because the outcome column is not evenly distributed and we have more zeros than ones.
+
+```{r guess model, echo = TRUE}
+guess_model <- sample(c(0,1), length(test_index), replace = TRUE)
+mean(guess_model == test_set$Y)
+```
+
+Now we are going to apply a general linear model, it is simple but it may provide a good performance:
+
+```{r linear model, echo = TRUE}
+fit_linear <- train(as.factor(Y)~., method = "glm", data = train_set)
+linear_preds <- predict(fit_linear, test_set)
+
+mean(linear_preds == test_set$Y)
+```
+
+In fact, linear model has a 80% accuracy, not bad.
+
+Before applying more models, we will realize PCA. With this technique we can discover which are the variables that influence the most the variance. That is, the variables that most explain the Outcome column and we could focus our efforts in theses columns:
+
+```{r pca, echo = TRUE}
+pca_matrix <- prcomp(train_set[,-Y]) 
+summary(pca_matrix)
+```
+
+After applying PCA we can see how PC1 (Pregnancies) explain 30% of the variance. We will perform now a LDA model using Pregnancies as the only predictor:
+
+```{r lda model pregnancies, echo = TRUE}
+fit_lda_preg <- train(as.factor(Y)~Pregnancies, method = "lda", data = train_set)
+lda_preds_preg <- predict(fit_lda_preg, test_set)
+
+mean(lda_preds_preg == test_set$Y)
+```
+
+LDA model using Pregnancies as predictor has a 66% accuracy. We will try this same model but using all the variables as predictors:
+
+```{r lda model all predictors, echo = TRUE}
+fit_lda <- train(as.factor(Y)~., method = "lda", data = train_set)
+lda_preds <- predict(fit_lda, test_set)
+
+mean(lda_preds == test_set$Y)
+```
+
+Using all the variables as predictors we have a nicer result: 81% accuracy. However, we can assume that applying PCA before any model can be useful in some situations: For example, if we had a big dataset that provoques computational problems, instead of using all the variables we could apply PCA to discover the 3 or 4 most important variables and apply the models on them, speeding up the process.
+
+Now we will apply QDA model:
+
+```{r qda model, echo = TRUE}
+fit_qda <- train(as.factor(Y)~., method = "qda", data = train_set)
+qda_preds <- predict(fit_qda, test_set)
+
+mean(qda_preds == test_set$Y)
+```
+
+For the diabetes dataset, QDA is less precise than LDA.
+
+The next model we will try is k-Nearest Neighbours, firstly we will tune our algorithm to find the best K.
+
+```{r knn train, echo = TRUE}
+train_knn <- train(as.factor(Y) ~ ., 
+                   method = "knn",
+                   data = train_set,
+                   tuneGrid = data.frame(k = seq(3, 51, 2)))
+train_knn$bestTune
+```
+
+A priori, the best k is 49, we can visualize with the next plot:
+
+```{r knn plot, echo = TRUE}
+ggplot(train_knn)
+
+```
+
+KNN accuracy is 77% in our test set.
+
+```{r knn prediction, echo = TRUE}
+knn_pred <- predict(train_knn, test_set)
+mean(knn_pred == test_set$Y)
+```
+
+Finally, the last model is an ensemble model. For row, we will apply all the previous models and if the majority of them predict 1, our ensemble model will predict one.
+
+```{r ensemble, echo = TRUE}
+ensemble <- cbind(glm = linear_preds == 1, lda = lda_preds == 1, qda = qda_preds == 1, knn = knn_pred == 1)
+
+ensemble_preds <- ifelse(rowMeans(ensemble) > 0.5, 1, 0) 
+mean(ensemble_preds == test_set$Y)
+
+models <- c("linear model", "LDA", "QDA", "K nearest neighbors","Ensemble")
+accuracy <- c(mean(linear_preds == test_set$Y),
+              mean(lda_preds == test_set$Y),
+              mean(qda_preds == test_set$Y),
+              mean(knn_pred == test_set$Y),
+              mean(ensemble_preds == test_set$Y))
+
+data.frame(Model = models, Accuracy = accuracy)
+```
+
+Ensemle model's accuracy is 82%.
+
+# Conclusion
+
+We have performed several key steps in any machine learning proyect: We have understood the dataset, focusing in the differences between diabetics and non diabetics. Then we have explored graphically three important trends such as glucose levels, insulin levels and number of pregnancies. Finally we have applied 5 machine learning algorithms to improve our baseline model and obtain good prediction results.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
